@@ -630,7 +630,10 @@ def show_results_page():
 if not st.session_state.authenticated:
     _, center_col, _ = st.columns([1, 3.5, 1])
     with center_col:
-        st.title("🔐 Login to Vote")
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            st.image("D:\Voter app\Logo URC+Jack'n Jill-01 O.png")
+        st.header("🔐 Login to Vote")
         with st.form("login_form"):
             user_input = st.text_input("Username")
             pass_input = st.text_input("Password", type="password")
