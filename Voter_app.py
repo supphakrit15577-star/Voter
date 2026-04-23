@@ -630,9 +630,9 @@ def show_results_page():
 if not st.session_state.authenticated:
     _, center_col, _ = st.columns([1, 3.5, 1])
     with center_col:
-        col1, col2, col3 = st.columns([1,1,1])
+        col1, col2, col3 = st.columns([1,2,1])
         with col2:
-            st.image("https://ruimgsbzxfqrmoxowknr.supabase.co/storage/v1/object/public/Logo/Logo%20URC+Jack'n%20Jill-01%20O.png")
+            st.image("https://ruimgsbzxfqrmoxowknr.supabase.co/storage/v1/object/public/Logo/Logo%20URC+Jack'n%20Jill-01%20O.png", use_container_width=True)
         st.header("🔐 Login to Vote")
         with st.form("login_form"):
             user_input = st.text_input("Username")
