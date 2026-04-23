@@ -159,10 +159,18 @@ def submit_detailed_vote(choice_id, scores: dict):
 
             # 2. อัปเดตคะแนนรวมใน votes_table (บวกเพิ่มจากเดิม)
             votes_now = get_db_votes()
-            current_count = votes_now.get(choice_id, 0)
-            execute_with_retry(lambda: conn.table("votes_table").update(
-                {"vote_count": current_count + total_score}
-            ).eq("item_id", choice_id))
+            if choice_id in votes_now:
+                # มีอยู่แล้ว ให้ update
+                current_count = votes_now[choice_id]
+                execute_with_retry(lambda: conn.table("votes_table").update(
+                    {"vote_count": current_count + total_score}
+                ).eq("item_id", choice_id))
+            else:
+                # ยังไม่มี ให้ insert
+                execute_with_retry(lambda: conn.table("votes_table").insert({
+                    "item_id": choice_id,
+                    "vote_count": total_score
+                }))
 
             # 3. อัปเดตจำนวน choice ที่ user โหวตไปแล้ว (ไม่นับ admin)
             if not is_admin:
