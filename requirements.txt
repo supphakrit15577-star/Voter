@@ -2,4 +2,4 @@ SupabaseConnection
 time
 pandas
 streamlit
-st_supabase_connection
+st-supabase-connection
