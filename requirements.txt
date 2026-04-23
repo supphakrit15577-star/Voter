@@ -1,5 +1,4 @@
 supabase
-time
 pandas
 streamlit
 st-supabase-connection
