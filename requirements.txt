@@ -1,4 +1,4 @@
-SupabaseConnection
+supabase
 time
 pandas
 streamlit
