@@ -1,3 +1,4 @@
-st_supabase_connection
+supabase-py
 time
 pandas
+streamlit
