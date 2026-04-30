@@ -175,9 +175,12 @@ def submit_detailed_vote(choice_id, scores: dict):
             # 3. อัปเดตจำนวน choice ที่ user โหวตไปแล้ว (ไม่นับ admin)
             if not is_admin:
                 new_count = st.session_state.voted_count + 1
-                execute_with_retry(lambda: conn.table("users").update(
-                    {"voted_count": new_count}
-                ).eq("username", st.session_state.username))
+                try:
+                    execute_with_retry(lambda: conn.table("users").update(
+                        {"voted_count": new_count}
+                    ).eq("username", st.session_state.username))
+                except Exception:
+                    pass # ป้องกันกรณี table users อัปเดตไม่ได้ ให้ข้ามไป
                 st.session_state.voted_count = new_count
 
             return True
@@ -358,7 +361,7 @@ def show_vote_page():
             st.session_state.scoring_choice = None
 
     inject_custom_css()
-    st.title("🏆 Voting App")
+    st.header("🏆 Voting App")
 
     # กรอง choices ตาม dept ของ user
     filtered_choices = get_filtered_choices()
@@ -410,7 +413,7 @@ def show_vote_level2_page():
             st.session_state.scoring_choice = None
 
     inject_custom_css()
-    st.title("🔥 Vote Level 2: The Final 5")
+    st.header("🔥 Vote Level 2: The Final 5")
     st.info("หน้านี้สำหรับผู้เชี่ยวชาญ (Supervisor/Admin) เพื่อโหวตคัดเลือกจาก 5 อันดับแรกเท่านั้น")
 
     # 1. ค้นหา Top 5 จากคะแนนปัจจุบัน
@@ -470,7 +473,7 @@ def show_vote_level3_page():
             st.session_state.scoring_choice = None
 
     inject_custom_css()
-    st.title("🏆 Vote Level 3: The Final 3")
+    st.header("🏆 Vote Level 3: The Final 3")
     st.info("หน้านี้สำหรับ Admin และ Special เท่านั้น เพื่อโหวตคัดเลือกจาก 3 อันดับแรกเท่านั้น")
 
     # เตรียมรายการ Top 3 — Level 3 เป็นรอบ Final ดูทุก choice ข้ามแผนก
@@ -535,7 +538,7 @@ def show_vote_level3_page():
 
 def show_results_page():
     inject_custom_css()
-    st.title("📊 สรุปผลการโหวต (Admin Only)")
+    st.header("📊 สรุปผลการโหวต (Admin Only)")
     
     votes_data = get_db_votes()
     if votes_data:
@@ -589,7 +592,18 @@ def show_results_page():
     st.subheader("📑 รายชื่อผู้ที่ใช้สิทธิ์แล้ว")
     try:
         # ดึงข้อมูลผู้ใช้ทั้งหมดที่ไม่ใช่ Admin
-        response = execute_with_retry(lambda: conn.table("users").select("username, voted_count, dept, role").neq("role", "admin"))
+        response = execute_with_retry(lambda: conn.table("users").select("username, dept, role").neq("role", "admin"))
+        
+        # ดึงประวัติการโหวตทั้งหมดเพื่อนับจำนวนที่โหวตไปแล้วจากตาราง detailed_votes โดยตรง
+        votes_res = execute_with_retry(lambda: conn.table("detailed_votes").select("username, choice_id"))
+        vote_counts_map = {}
+        if votes_res and votes_res.data:
+            for r in votes_res.data:
+                uname = r.get("username")
+                if uname:
+                    if uname not in vote_counts_map:
+                        vote_counts_map[uname] = set()
+                    vote_counts_map[uname].add(r.get("choice_id"))
         
         if response.data:
             # คำนวณจำนวนตัวเลือกทั้งหมดแยกตามแผนกจาก CHOICES
@@ -602,7 +616,10 @@ def show_results_page():
             voter_status = []
             for user in response.data:
                 username = user.get("username")
-                voted = user.get("voted_count", 0)
+                
+                # นับจากจำนวน choice ที่โหวตไปแล้ว
+                voted = len(vote_counts_map.get(username, set()))
+                
                 dept = user.get("dept", "Unknown")
                 role = user.get("role", "user")
                 
@@ -692,11 +709,11 @@ else:
     if is_admin:
         st.sidebar.success("✅ Admin: โหวตได้ไม่จำกัด")
     elif is_special:
-        voted_so_far = st.session_state.voted_count
+        voted_so_far = len(get_user_voted_choices())
         st.sidebar.info(f"โหวตแล้ว: **{voted_so_far}** choice")
         st.sidebar.caption("📌 โหวตได้ 1 ครั้งต่อ 1 choice")
     else:
-        voted_so_far = st.session_state.voted_count
+        voted_so_far = len(get_user_voted_choices())
         st.sidebar.info(f"โหวตแล้ว: **{voted_so_far}** choice")
         st.sidebar.caption("📌 โหวตได้ 1 ครั้งต่อ 1 choice")
     
