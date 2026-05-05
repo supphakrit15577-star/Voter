@@ -2,9 +2,154 @@ import streamlit as st
 from st_supabase_connection import SupabaseConnection
 import time
 import pandas as pd
+import streamlit.components.v1 as components
 
 # 1. เชื่อมต่อฐานข้อมูล
 conn = st.connection("supabase", type=SupabaseConnection)
+
+#Logging
+#จำลอง User ID (ในระบบจริงอาจจะมาจาก st.session_state['user_id'] หลัง Login)
+
+def inject_silent_logging(user_id="anonymous"):
+    # ดึงค่า URL และ KEY จาก Streamlit secrets
+    try:
+        SUPABASE_URL = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+        SUPABASE_KEY = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+    except Exception:
+        SUPABASE_URL = ""
+        SUPABASE_KEY = ""
+
+    # ส่ง user_id เข้าไปใน JavaScript ผ่าน f-string
+    js_code = f"""
+    <script>
+    const SUPABASE_URL = "{SUPABASE_URL}/rest/v1/user_logs";
+    const SUPABASE_KEY = "{SUPABASE_KEY}";
+    const CURRENT_USER = "{user_id}";
+
+    const sendLogToSupabase = async (action, detail) => {{
+        try {{
+            await fetch(SUPABASE_URL, {{
+                method: "POST",
+                headers: {{
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${{SUPABASE_KEY}}`,
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal"
+                }},
+                body: JSON.stringify({{
+                    user_id: CURRENT_USER,
+                    action: action,
+                    detail: detail,
+                    page_url: window.parent.location.href
+                }})
+            }});
+        }} catch (error) {{
+            console.error("Logging failed:", error);
+        }}
+    }};
+
+    // --- ส่วนการล็อคและดักจับพฤติกรรม ---
+
+    // ล็อคและ Log การคลิกขวา
+    window.parent.document.addEventListener('contextmenu', (e) => {{
+        e.preventDefault();
+        sendLogToSupabase('Right-Click-Blocked', `Target Tag: ${{e.target.tagName}}`);
+    }});
+
+    // ดักการกดปุ่ม F12 หรือ Ctrl+Shift+I (DevTools)
+    window.parent.document.addEventListener('keydown', (e) => {{
+        if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I') || (e.ctrlKey && e.shiftKey && e.key === 'J') || (e.ctrlKey && e.key === 'U')) {{
+            sendLogToSupabase('DevTools-Attempt', `Key Pressed: ${{e.key}}`);
+        }}
+    }});
+
+    // --- ดักจับการคลิก (เฉพาะปุ่ม, ข้อความ, รูปภาพ) ---
+    window.parent.document.addEventListener('click', (e) => {{
+        // กรองเอาเฉพาะแท็กที่เป็น ปุ่ม(button,a), รูปภาพ(img) และข้อความ(p,span,h1-h6,li,label)
+        let target = e.target.closest('button, a, img, p, span, h1, h2, h3, h4, h5, h6, li, label');
+        
+        if (target) {{
+            let elementInfo = target.tagName;
+            if (target.tagName === 'IMG' && target.src) {{
+                // ถ้ารูปยาวไป เอามาแค่ชื่อไฟล์/พาธสั้นๆ
+                let src_short = target.src.length > 50 ? target.src.substring(0, 50) + "..." : target.src;
+                elementInfo += ` | Src: "${{src_short}}"`;
+            }} else if (target.innerText) {{
+                // ตัดข้อความมาเก็บไว้ด้วย จะได้รู้ว่าคลิกข้อความอะไร
+                elementInfo += ` | Text: "${{target.innerText.replace(/\\n/g, ' ').substring(0, 50).trim()}}"`;
+            }}
+            sendLogToSupabase('User-Click', `Element: ${{elementInfo}}`);
+        }}
+    }});
+
+    // --- ดักจับการพิมพ์/กรอกข้อมูล ---
+    window.parent.document.addEventListener('change', (e) => {{
+        let tagName = e.target.tagName;
+        if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {{
+            // ถ้าเป็นช่องรหัสผ่านให้เซ็นเซอร์ไว้
+            let val = e.target.type === 'password' ? '***' : e.target.value;
+            sendLogToSupabase('Input-Change', `Tag: ${{tagName}}, Value: ${{val}}`);
+        }}
+    }});
+    </script>
+    """
+    # แทรก JavaScript เข้าไปในแอป
+    components.html(js_code, height=0)
+
+# เรียกใช้งานฟังก์ชันที่ส่วนบนสุดของแอป
+inject_silent_logging(st.session_state.get("username", "anonymous"))
+
+def inject_watermark(username):
+    watermark_html = f"""
+    <script>
+    setTimeout(function() {{
+        const parentDoc = window.parent.document;
+        // เช็คว่ามีอยู่แล้วหรือเปล่า ถ้ามีให้ลบแล้วสร้างใหม่
+        let existing = parentDoc.getElementById('dynamic-watermark');
+        if (existing) {{
+            existing.remove();
+        }}
+        
+        const watermarkContainer = parentDoc.createElement('div');
+        watermarkContainer.id = 'dynamic-watermark';
+        watermarkContainer.style.position = 'fixed';
+        watermarkContainer.style.top = '0';
+        watermarkContainer.style.left = '0';
+        watermarkContainer.style.width = '100vw';
+        watermarkContainer.style.height = '100vh';
+        watermarkContainer.style.pointerEvents = 'none'; // ห้ามขวางการคลิก
+        watermarkContainer.style.zIndex = '99999';
+        watermarkContainer.style.opacity = '0.05'; // ปรับความจางที่นี่ (0.01 - 1.0)
+        
+        // ใช้ Canvas วาดลายน้ำ
+        const canvas = parentDoc.createElement('canvas');
+        canvas.width = 125;
+        canvas.height = 100;
+        const ctx = canvas.getContext('2d');
+        
+        ctx.translate(75, 50);
+        ctx.rotate(-25 * Math.PI / 180);
+        ctx.textAlign = 'center';
+        
+        // ใส่ชื่อ User
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillStyle = 'rgba(100, 100, 100, 1)'; 
+        ctx.fillText("{username}", 0, -5);
+        
+        // ใส่วันที่เวลา
+        ctx.font = '10px sans-serif';
+        const dateStr = new Date().toLocaleString('th-TH');
+        ctx.fillText(dateStr, 0, 10);
+        
+        // ตั้งเป็น background
+        watermarkContainer.style.backgroundImage = 'url(' + canvas.toDataURL('image/png') + ')';
+        watermarkContainer.style.backgroundRepeat = 'repeat';
+        
+        parentDoc.body.appendChild(watermarkContainer);
+    }}, 500);
+    </script>
+    """
+    components.html(watermark_html, height=0)
 
 # --- ฟังก์ชันช่วยส่งคำสั่งพร้อมลองใหม่ (Retry) กรณีเน็ตหลุด ---
 def execute_with_retry(query_func, retries=3, delay=1):
@@ -216,7 +361,7 @@ def inject_custom_css():
             .card-name {
                 font-size: 1.1rem;
                 font-weight: bold;
-                color: #ffffff !important;
+                color: #a6d608 !important;
                 margin-bottom: 5px;
             }
             .vote-count {
@@ -658,6 +803,9 @@ if not st.session_state.authenticated:
             if submit:
                 login(user_input, pass_input)
 else:
+    # เรียกใช้งานลายน้ำป้องกันการแคปหน้าจอ (ใส่ชื่อ user ลงไป)
+    inject_watermark(st.session_state.username)
+
     # Sidebar สำหรับ Logout และสถานะการโหวต
     st.sidebar.title(f"สวัสดี, {st.session_state.username}")
     
