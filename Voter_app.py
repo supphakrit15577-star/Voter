@@ -7,6 +7,19 @@ import streamlit.components.v1 as components
 # 1. เชื่อมต่อฐานข้อมูล
 conn = st.connection("supabase", type=SupabaseConnection)
 
+#ปิดปุ่ม Fullscreen ที่มุมขวาบนของรูปภาพ 
+st.markdown("""
+    <style>
+    /* ซ่อนปุ่ม Fullscreen ที่มุมขวาบนของรูปภาพ */
+    button[title="View fullscreen"],
+    button[title="View Fullscreen"],
+    [data-testid="StyledFullScreenButton"],
+    div[data-testid="stImage"] button {
+        display: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 #Logging
 #จำลอง User ID (ในระบบจริงอาจจะมาจาก st.session_state['user_id'] หลัง Login)
 
@@ -118,7 +131,7 @@ def inject_watermark(username):
         watermarkContainer.style.width = '100vw';
         watermarkContainer.style.height = '100vh';
         watermarkContainer.style.pointerEvents = 'none'; // ห้ามขวางการคลิก
-        watermarkContainer.style.zIndex = '99999';
+        watermarkContainer.style.zIndex = '9999999999';
         watermarkContainer.style.opacity = '0.05'; // ปรับความจางที่นี่ (0.01 - 1.0)
         
         // ใช้ Canvas วาดลายน้ำ
@@ -247,6 +260,15 @@ def login(username, password):
             # เก็บชื่อผู้ใช้ไว้ใน URL เพื่อให้ไม่ต้อง Login ใหม่ตอน Refresh
             st.query_params["user"] = username
             st.success("ล็อกอินสำเร็จ!")
+            try:
+                execute_with_retry(lambda: conn.table("user_logs").insert({
+                    "user_id": username,
+                    "action": "Login",
+                    "detail": "User logged in successfully",
+                    "page_url": "Server-side"
+                }))
+            except Exception:
+                pass
             st.rerun()
         else:
             st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
@@ -254,6 +276,16 @@ def login(username, password):
         st.error(f"เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์ (อาจเป็นที่เน็ตเวิร์ก): {e}")
 
 def logout():
+    username = st.session_state.get("username", "unknown")
+    try:
+        execute_with_retry(lambda: conn.table("user_logs").insert({
+            "user_id": username,
+            "action": "Logout",
+            "detail": "User logged out",
+            "page_url": "Server-side"
+        }))
+    except Exception:
+        pass
     st.session_state.authenticated = False
     st.session_state.username = ""
     st.query_params.clear()  # ล้างพารามิเตอร์ใน URL
